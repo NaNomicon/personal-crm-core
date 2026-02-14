@@ -3,6 +3,8 @@ import requests
 import os
 import json
 import uuid
+import time
+import sys
 
 # Configuration
 COZO_HOST = os.getenv("COZO_HOST", "http://localhost:9070")
@@ -35,6 +37,54 @@ COZO_AUTH_TOKEN = get_cozo_token()
 mcp = FastMCP("PersonalCRM-Cozo", host="0.0.0.0")
 
 
+def wait_for_cozo(retries: int = 30, delay: int = 2) -> bool:
+    """Wait for CozoDB to be ready."""
+    print(f"Waiting for CozoDB at {COZO_HOST}...")
+    url = f"{COZO_HOST}/text-query"
+    # Simple check query
+    check_payload = {"script": "?[] <- [['ping']]", "params": {}}
+    headers = {"Content-Type": "application/json"}
+    if COZO_AUTH_TOKEN:
+        headers["x-cozo-auth"] = COZO_AUTH_TOKEN
+
+    for i in range(retries):
+        try:
+            # Short timeout to fail fast
+            response = requests.post(
+                url, json=check_payload, headers=headers, timeout=2
+            )
+            if response.status_code == 200:
+                print("CozoDB is ready!")
+                return True
+            else:
+                print(
+                    f"CozoDB returned status {response.status_code}. Retrying ({i + 1}/{retries})..."
+                )
+        except requests.exceptions.ConnectionError:
+            print(f"Connection refused. Retrying ({i + 1}/{retries})...")
+        except Exception as e:
+            print(f"Error connecting: {e}. Retrying ({i + 1}/{retries})...")
+
+        time.sleep(delay)
+
+    print("Timed out waiting for CozoDB.")
+    return False
+
+
+def execute_cozo(script: str, params: dict | None = None):
+    """Execute a script against CozoDB HTTP API"""
+    url = f"{COZO_HOST}/text-query"
+    headers = {"Content-Type": "application/json", "x-cozo-auth": COZO_AUTH_TOKEN}
+    payload = {"script": script, "params": params or {}}
+
+    try:
+        response = requests.post(url, json=payload, headers=headers)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        return {"ok": False, "message": str(e)}
+
+
 def initialize_schema():
     """Initialize the database schema if not already done."""
     schema_path = "/app/schema.cozo"
@@ -61,20 +111,6 @@ def initialize_schema():
             print("Schema already exists.")
     else:
         print("Schema file not found. Skipping initialization.")
-
-
-def execute_cozo(script: str, params: dict | None = None):
-    """Execute a script against CozoDB HTTP API"""
-    url = f"{COZO_HOST}/text-query"
-    headers = {"Content-Type": "application/json", "x-cozo-auth": COZO_AUTH_TOKEN}
-    payload = {"script": script, "params": params or {}}
-
-    try:
-        response = requests.post(url, json=payload, headers=headers)
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        return {"ok": False, "message": str(e)}
 
 
 def get_stored_rules() -> str:
@@ -247,7 +283,10 @@ def inspect_person_schema() -> str:
 
 
 # Run schema initialization on module import (for Uvicorn)
-initialize_schema()
+if wait_for_cozo():
+    initialize_schema()
+else:
+    print("Warning: Skipping schema initialization due to timeout.")
 
 # Create the SSE app AFTER tools are defined
 app = mcp.sse_app()
