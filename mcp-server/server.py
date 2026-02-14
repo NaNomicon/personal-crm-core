@@ -32,7 +32,7 @@ COZO_AUTH_TOKEN = get_cozo_token()
 
 # Initialize FastMCP
 mcp = FastMCP("PersonalCRM-Cozo")
-app = mcp.streamable_http_app()
+app = mcp.sse_app()
 
 
 def initialize_schema():
