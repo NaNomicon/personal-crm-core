@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  cozodb:
+    image: cozo/cozo:0.7.5
+    ports:
+      - "9070:9070"
+    volumes:
+      - ./cozo_data:/var/lib/cozo
+    restart: unless-stopped
+    command: server --engine=sqlite --host=0.0.0.0 --port=9070
+
+  mcp-server:
+    build: ./mcp-server
+    ports:
+      - "8000:8000"
+    environment:
+      - COZO_HOST=http://cozodb:9070
+      - COZO_AUTH_TOKEN=secret-token-change-me
+    depends_on:
+      - cozodb
+    restart: unless-stopped

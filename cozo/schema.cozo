@@ -1,0 +1,20 @@
+# Core Entities
+:create person {
+    id: String,
+    name: String,
+    data: Json      # Arbitrary data (e.g., {gender: 'M', dob: '1990-01-01', job: 'Engineer'})
+}
+
+# Generic Facts / Relations
+:create fact {
+    from_id: String,
+    to_id: String,
+    type: String,   # e.g., 'parent_child', 'spouse', 'met_at'
+    data: Json      # e.g., {location: 'Bar', date: '2023-10-20'}
+}
+
+# Persistent Datalog Rules
+:create rule {
+    name: String,
+    body: String    # The Datalog rule definition
+}
