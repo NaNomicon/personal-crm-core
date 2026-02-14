@@ -11,7 +11,7 @@ services:
     command: server --engine=sqlite --host=0.0.0.0 --port=9070
 
   mcp-server:
-    image: registry.nanomicon.com/personal-crm-core:latest
+    image: ghcr.io/nanomicon/personal-crm-core:latest
     build: ./mcp-server
     ports:
       - "8000:8000"
