@@ -33,7 +33,6 @@ COZO_AUTH_TOKEN = get_cozo_token()
 # Initialize FastMCP
 # Set host to 0.0.0.0 to allow external access (fixes "Invalid Host header")
 mcp = FastMCP("PersonalCRM-Cozo", host="0.0.0.0")
-app = mcp.sse_app()
 
 
 def initialize_schema():
@@ -247,6 +246,11 @@ def inspect_person_schema() -> str:
     return "Error querying people."
 
 
+# Run schema initialization on module import (for Uvicorn)
+initialize_schema()
+
+# Create the SSE app AFTER tools are defined
+app = mcp.sse_app()
+
 if __name__ == "__main__":
-    initialize_schema()
     mcp.run()
