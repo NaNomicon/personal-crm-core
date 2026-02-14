@@ -14,4 +14,4 @@ RUN wget https://github.com/cozodb/cozo/releases/download/v0.7.6/cozo-0.7.6-x86_
 EXPOSE 9070
 
 ENTRYPOINT ["./cozo"]
-CMD ["server", "--engine=sqlite", "--host=0.0.0.0", "--port=9070", "--path=/var/lib/cozo/storage"]
+CMD ["server", "--engine=sqlite", "--bind=0.0.0.0", "--port=9070", "--path=/var/lib/cozo/storage"]

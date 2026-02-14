@@ -10,6 +10,7 @@ COZO_AUTH_TOKEN = os.getenv("COZO_AUTH_TOKEN", "")
 
 # Initialize FastMCP
 mcp = FastMCP("PersonalCRM-Cozo")
+app = mcp.app
 
 
 def initialize_schema():
