@@ -6,11 +6,33 @@ import uuid
 
 # Configuration
 COZO_HOST = os.getenv("COZO_HOST", "http://localhost:9070")
-COZO_AUTH_TOKEN = os.getenv("COZO_AUTH_TOKEN", "")
+
+
+def get_cozo_token():
+    """Get Cozo auth token from environment or generated file."""
+    # 1. Try environment variable
+    token = os.getenv("COZO_AUTH_TOKEN", "")
+    if token and token != "secret-token-change-me":
+        return token
+
+    # 2. Try to read generated token from shared volume
+    # Cozo puts the token in <path>.sqlite.cozo_auth for sqlite engine
+    token_file = "/var/lib/cozo/storage.sqlite.cozo_auth"
+    if os.path.exists(token_file):
+        try:
+            with open(token_file, "r") as f:
+                return f.read().strip()
+        except Exception as e:
+            print(f"Error reading token file: {e}")
+
+    return token
+
+
+COZO_AUTH_TOKEN = get_cozo_token()
 
 # Initialize FastMCP
 mcp = FastMCP("PersonalCRM-Cozo")
-app = mcp.app
+app = mcp.streamable_http_app()
 
 
 def initialize_schema():

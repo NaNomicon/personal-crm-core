@@ -17,6 +17,7 @@ services:
       - "8000:8000"
     volumes:
       - ./cozo/schema.cozo:/app/schema.cozo
+      - ./cozo_data:/var/lib/cozo:ro
     environment:
       - COZO_HOST=http://cozodb:9070
       - COZO_AUTH_TOKEN=secret-token-change-me
