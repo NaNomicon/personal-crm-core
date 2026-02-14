@@ -31,7 +31,8 @@ def get_cozo_token():
 COZO_AUTH_TOKEN = get_cozo_token()
 
 # Initialize FastMCP
-mcp = FastMCP("PersonalCRM-Cozo")
+# Set host to 0.0.0.0 to allow external access (fixes "Invalid Host header")
+mcp = FastMCP("PersonalCRM-Cozo", host="0.0.0.0")
 app = mcp.sse_app()
 
 
