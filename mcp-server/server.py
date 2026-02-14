@@ -12,6 +12,34 @@ COZO_AUTH_TOKEN = os.getenv("COZO_AUTH_TOKEN", "")
 mcp = FastMCP("PersonalCRM-Cozo")
 
 
+def initialize_schema():
+    """Initialize the database schema if not already done."""
+    schema_path = "/app/schema.cozo"
+    if not os.path.exists(schema_path):
+        # Fallback for local dev if not in docker
+        schema_path = "../cozo/schema.cozo"
+
+    if os.path.exists(schema_path):
+        print(f"Loading schema from {schema_path}")
+        with open(schema_path, "r") as f:
+            schema_script = f.read()
+
+        # Check if person table exists
+        check_script = "::columns person"
+        result = execute_cozo(check_script)
+        if not result.get("ok"):
+            print("Schema not found. Initializing...")
+            init_result = execute_cozo(schema_script)
+            if init_result.get("ok"):
+                print("Schema initialized successfully.")
+            else:
+                print(f"Failed to initialize schema: {init_result.get('message')}")
+        else:
+            print("Schema already exists.")
+    else:
+        print("Schema file not found. Skipping initialization.")
+
+
 def execute_cozo(script: str, params: dict | None = None):
     """Execute a script against CozoDB HTTP API"""
     url = f"{COZO_HOST}/text-query"
@@ -196,4 +224,5 @@ def inspect_person_schema() -> str:
 
 
 if __name__ == "__main__":
+    initialize_schema()
     mcp.run()
