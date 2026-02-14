@@ -37,7 +37,7 @@ COZO_AUTH_TOKEN = get_cozo_token()
 mcp = FastMCP("PersonalCRM-Cozo", host="0.0.0.0")
 
 
-def wait_for_cozo(retries: int = 30, delay: int = 2) -> bool:
+def wait_for_cozo(retries: int = 60, delay: int = 2) -> bool:
     """Wait for CozoDB to be ready."""
     print(f"Waiting for CozoDB at {COZO_HOST}...")
     url = f"{COZO_HOST}/text-query"
@@ -57,13 +57,16 @@ def wait_for_cozo(retries: int = 30, delay: int = 2) -> bool:
                 print("CozoDB is ready!")
                 return True
             else:
-                print(
-                    f"CozoDB returned status {response.status_code}. Retrying ({i + 1}/{retries})..."
-                )
+                if i % 5 == 0:
+                    print(
+                        f"CozoDB returned status {response.status_code}. Retrying ({i + 1}/{retries})..."
+                    )
         except requests.exceptions.ConnectionError:
-            print(f"Connection refused. Retrying ({i + 1}/{retries})...")
+            if i % 5 == 0:
+                print(f"Connection refused. Retrying ({i + 1}/{retries})...")
         except Exception as e:
-            print(f"Error connecting: {e}. Retrying ({i + 1}/{retries})...")
+            if i % 5 == 0:
+                print(f"Error connecting: {e}. Retrying ({i + 1}/{retries})...")
 
         time.sleep(delay)
 
@@ -286,7 +289,8 @@ def inspect_person_schema() -> str:
 if wait_for_cozo():
     initialize_schema()
 else:
-    print("Warning: Skipping schema initialization due to timeout.")
+    print("Error: Could not connect to CozoDB. Exiting...")
+    sys.exit(1)
 
 # Create the SSE app AFTER tools are defined
 app = mcp.sse_app()
