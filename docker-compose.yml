@@ -3,6 +3,7 @@ version: '3.8'
 services:
   cozodb:
     build: ./cozo
+    image: ghcr.io/nanomicon/personal-crm-core-cozo:latest
     ports:
       - "9070:9070"
     volumes:
