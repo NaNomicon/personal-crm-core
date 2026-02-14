@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   cozodb:
-    image: cozo/cozo:0.7.5
+    image: cozodb/cozo:0.7.5
     ports:
       - "9070:9070"
     volumes:
