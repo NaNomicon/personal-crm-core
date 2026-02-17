@@ -190,7 +190,7 @@ def add_rule(name: str, cypher_query: str, description: str = "") -> str:
         else:
             # Create
             conn.execute(
-                "CREATE (r:Rule {name: $name}) SET r.cypher = $cypher, r.description = $desc",
+                "CREATE (r:Rule {name: $name, cypher: $cypher, description: $desc})",
                 {"name": name, "cypher": cypher_query, "desc": description},
             )
             return f"Rule '{name}' created."
