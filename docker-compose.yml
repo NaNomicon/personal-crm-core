@@ -6,6 +6,8 @@ services:
     build: ./mcp-server
     volumes:
       - ./kuzu_data:/app/kuzu_data
+    environment:
+      - KUZU_PATH=/app/kuzu_data/personal_crm.kuzu
     ports:
       - "8000:8000"
     restart: unless-stopped
