@@ -174,14 +174,26 @@ def add_rule(name: str, cypher_query: str, description: str = "") -> str:
         description: Optional description.
     """
     conn = get_conn()
-    # Upsert rule
-    # Kuzu MERGE simple upsert
+    # Manual upsert to avoid Kuzu MERGE stability issues with parameters
     try:
-        conn.execute(
-            "MERGE (r:Rule {name: $name}) SET r.cypher = $cypher, r.description = $desc",
-            {"name": name, "cypher": cypher_query, "desc": description},
+        # Check if rule exists
+        check = conn.execute(
+            "MATCH (r:Rule) WHERE r.name = $name RETURN r.name", {"name": name}
         )
-        return f"Rule '{name}' saved."
+        if check.has_next():
+            # Update
+            conn.execute(
+                "MATCH (r:Rule) WHERE r.name = $name SET r.cypher = $cypher, r.description = $desc",
+                {"name": name, "cypher": cypher_query, "desc": description},
+            )
+            return f"Rule '{name}' updated."
+        else:
+            # Create
+            conn.execute(
+                "CREATE (r:Rule {name: $name, cypher: $cypher, description: $desc})",
+                {"name": name, "cypher": cypher_query, "desc": description},
+            )
+            return f"Rule '{name}' created."
     except Exception as e:
         return f"Error saving rule: {e}"
 
