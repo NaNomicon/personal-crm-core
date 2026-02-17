@@ -1,30 +1,16 @@
 version: '3.8'
 
 services:
-  cozodb:
-    build: ./cozo
-    image: ghcr.io/nanomicon/personal-crm-core-cozo:latest
-    ports:
-      - "9070:9070"
-    volumes:
-      - ./cozo_data:/var/lib/cozo
-    restart: unless-stopped
-
   mcp-server:
-    image: ghcr.io/nanomicon/personal-crm-core:latest
+
     build: ./mcp-server
+    volumes:
+      - ./kuzu_data:/app/kuzu_data
     ports:
       - "8000:8000"
-    volumes:
-      - ./cozo/schema.cozo:/app/schema.cozo
-      - ./cozo_data:/var/lib/cozo:ro
-    environment:
-      - COZO_HOST=http://cozodb:9070
-      - COZO_AUTH_TOKEN=secret-token-change-me
-    depends_on:
-      - cozodb
     restart: unless-stopped
     labels:
+
       - "traefik.enable=true"
       - "traefik.http.routers.mcp-server.rule=Host(`pcrm.nanomicon.com`)"
       - "traefik.http.services.mcp-server.loadbalancer.server.port=8000"

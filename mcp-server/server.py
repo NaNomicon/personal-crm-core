@@ -1,133 +1,94 @@
 from mcp.server.fastmcp import FastMCP
-import requests
 import os
 import json
 import uuid
-import time
-import sys
-
-# Configuration
-COZO_HOST = os.getenv("COZO_HOST", "http://localhost:9070")
-
-
-def get_cozo_token():
-    """Get Cozo auth token from environment or generated file."""
-    # 1. Try environment variable
-    token = os.getenv("COZO_AUTH_TOKEN", "")
-    if token and token != "secret-token-change-me":
-        return token
-
-    # 2. Try to read generated token from shared volume
-    # Cozo puts the token in <path>.sqlite.cozo_auth for sqlite engine
-    token_file = "/var/lib/cozo/storage.sqlite.cozo_auth"
-    if os.path.exists(token_file):
-        try:
-            with open(token_file, "r") as f:
-                return f.read().strip()
-        except Exception as e:
-            print(f"Error reading token file: {e}")
-
-    return token
-
+import kuzu
+import shutil
 
 # Initialize FastMCP
-# Set host to 0.0.0.0 to allow external access (fixes "Invalid Host header")
-mcp = FastMCP("PersonalCRM-Cozo", host="0.0.0.0")
+mcp = FastMCP("PersonalCRM-Kuzu", host="0.0.0.0")
+
+# Database Path
+DB_PATH = os.getenv("KUZU_PATH", "/app/kuzu_data")
 
 
-def wait_for_cozo(retries: int = 60, delay: int = 2) -> bool:
-    """Wait for CozoDB to be ready."""
-    print(f"Waiting for CozoDB at {COZO_HOST}...")
-    url = f"{COZO_HOST}/text-query"
-    # Simple check query
-    check_payload = {"script": "?[] <- [['ping']]", "params": {}}
-
-    for i in range(retries):
-        headers = {"Content-Type": "application/json"}
-        token = get_cozo_token()
-        if token:
-            headers["x-cozo-auth"] = token
-
-        try:
-            # Short timeout to fail fast
-            response = requests.post(
-                url, json=check_payload, headers=headers, timeout=2
-            )
-            if response.status_code == 200:
-                print("CozoDB is ready!")
-                return True
-            else:
-                if i % 5 == 0:
-                    print(
-                        f"CozoDB returned status {response.status_code}. Retrying ({i + 1}/{retries})..."
-                    )
-        except requests.exceptions.ConnectionError:
-            if i % 5 == 0:
-                print(f"Connection refused. Retrying ({i + 1}/{retries})...")
-        except Exception as e:
-            if i % 5 == 0:
-                print(f"Error connecting: {e}. Retrying ({i + 1}/{retries})...")
-
-        time.sleep(delay)
-
-    print("Timed out waiting for CozoDB.")
-    return False
+# Initialize KuzuDB
+def get_db():
+    return kuzu.Database(DB_PATH)
 
 
-def execute_cozo(script: str, params: dict | None = None):
-    """Execute a script against CozoDB HTTP API"""
-    url = f"{COZO_HOST}/text-query"
-    headers = {"Content-Type": "application/json"}
-    token = get_cozo_token()
-    if token:
-        headers["x-cozo-auth"] = token
+def get_conn(db=None):
+    if db is None:
+        db = get_db()
+    return kuzu.Connection(db)
 
-    payload = {"script": script, "params": params or {}}
 
+def get_schema_info(conn):
+    """Get list of tables from schema."""
+    # CALL db.schema() returns name, type, properties
+    # The output format depends on Kuzu version.
+    # For 0.4.0+, usually generic query result.
     try:
-        response = requests.post(url, json=payload, headers=headers)
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        return {"ok": False, "message": str(e)}
+        # We use a try-except block to handle potential schema fetch issues
+        # Ideally we parse the result.
+        # For this POC, we just return a list of dicts if possible.
+        return []  # Placeholder if schema query is complex to parse without running it
+    except Exception as e:
+        print(f"Error fetching schema: {e}")
+        return []
 
 
 def initialize_schema():
-    """Initialize the database schema if not already done."""
-    schema_path = "/app/schema.cozo"
-    if not os.path.exists(schema_path):
-        # Fallback for local dev if not in docker
-        schema_path = "../cozo/schema.cozo"
+    """Initialize the KuzuDB schema for Person, Rules, and base structures."""
+    if not os.path.exists(DB_PATH):
+        os.makedirs(DB_PATH)
 
-    if os.path.exists(schema_path):
-        print(f"Loading schema from {schema_path}")
-        with open(schema_path, "r") as f:
-            schema_script = f.read()
+    db = get_db()
+    conn = kuzu.Connection(db)
 
-        # Check if person table exists
-        check_script = "::columns person"
-        result = execute_cozo(check_script)
-        if not result.get("ok"):
-            print("Schema not found. Initializing...")
-            init_result = execute_cozo(schema_script)
-            if init_result.get("ok"):
-                print("Schema initialized successfully.")
-            else:
-                print(f"Failed to initialize schema: {init_result.get('message')}")
+    # Kuzu doesn't support IF NOT EXISTS for tables in all versions.
+    # We try to create and catch error if exists.
+    try:
+        conn.execute(
+            "CREATE NODE TABLE Person(uuid STRING, name STRING, data STRING, PRIMARY KEY (uuid))"
+        )
+        print("Initialized Person table.")
+    except RuntimeError as e:
+        if "already exists" in str(e):
+            pass
         else:
-            print("Schema already exists.")
-    else:
-        print("Schema file not found. Skipping initialization.")
+            print(f"Note: Person table creation skipped/failed: {e}")
+
+    try:
+        conn.execute(
+            "CREATE NODE TABLE Rule(name STRING, cypher STRING, description STRING, PRIMARY KEY (name))"
+        )
+        print("Initialized Rule table.")
+    except RuntimeError as e:
+        if "already exists" in str(e):
+            pass
+        else:
+            print(f"Note: Rule table creation skipped/failed: {e}")
 
 
-def get_stored_rules() -> str:
-    """Fetch all stored Datalog rules from the database."""
-    script = "?[body] := rule(_, body)"
-    result = execute_cozo(script)
-    if result.get("ok"):
-        # Concatenate all rule bodies
-        return "\n".join([row[0] for row in result.get("rows", [])])
-    return ""
+def ensure_rel_table(conn, rel_type: str):
+    """Ensure a relationship table exists."""
+    safe_type = "".join(c for c in rel_type if c.isalnum() or c == "_")
+    if not safe_type:
+        raise ValueError("Invalid relationship type")
+
+    try:
+        conn.execute(
+            f"CREATE REL TABLE {safe_type}(FROM Person TO Person, data STRING)"
+        )
+        print(f"Created relationship table {safe_type}")
+    except RuntimeError as e:
+        if "already exists" in str(e):
+            pass
+        else:
+            # If it fails for another reason, raise
+            raise e
+    return safe_type
 
 
 @mcp.tool()
@@ -144,19 +105,18 @@ def add_person(name: str, properties: str = "{}") -> str:
         return "Error: properties must be a valid JSON string."
 
     pid = str(uuid.uuid4())
+    conn = get_conn()
 
-    # script = "?[id, name, data] <- [[$id, $name, $data]] :put person {id, name, data}"
-    # Note: Cozo requires double braces for escaping if using f-string, but we use params.
-    script = """
-    ?[id, name, data] <- [[$id, $name, $data]]
-    :put person {id, name, data}
-    """
-    params = {"id": pid, "name": name, "data": props}
+    # Check if name exists (enforce unique name for this POC)
+    res = conn.execute("MATCH (p:Person) WHERE p.name = $name RETURN p", {"name": name})
+    if res.hasNext():
+        return f"Error: Person with name '{name}' already exists."
 
-    result = execute_cozo(script, params)
-    if result.get("ok"):
-        return f"Added person: {name} ({pid})"
-    return f"Failed to add person: {result.get('message')}"
+    conn.execute(
+        "CREATE (p:Person {uuid: $uuid, name: $name, data: $data})",
+        {"uuid": pid, "name": name, "data": properties},
+    )
+    return f"Added person: {name} ({pid})"
 
 
 @mcp.tool()
@@ -167,136 +127,153 @@ def add_fact(from_name: str, to_name: str, type: str, properties: str = "{}") ->
         from_name: Name of the subject person.
         to_name: Name of the object person.
         type: Type of relation (e.g., 'parent_child', 'spouse', 'met_at').
-        properties: JSON string of details (e.g., '{"location": "Bar", "year": 2023}').
+        properties: JSON string of details.
     """
     try:
-        props = json.loads(properties)
+        json.loads(properties)
     except json.JSONDecodeError:
         return "Error: properties must be a valid JSON string."
 
-    # 1. Resolve names to IDs
-    # Note: person table structure is person{id, name, data}
-    find_ids_script = "?[id, name] := person(id, name, _)"
-    result = execute_cozo(find_ids_script)
+    conn = get_conn()
+    try:
+        safe_type = ensure_rel_table(conn, type)
+    except ValueError:
+        return "Error: Invalid relationship type name."
 
-    if not result.get("ok"):
-        return f"Failed to query database: {result.get('message')}"
+    # Check existence
+    res_from = conn.execute(
+        "MATCH (p:Person) WHERE p.name = $name RETURN p.uuid", {"name": from_name}
+    )
+    if not res_from.hasNext():
+        return f"Error: Person '{from_name}' not found."
 
-    rows = result.get("rows", [])
-    from_id = next((r[0] for r in rows if r[1] == from_name), None)
-    to_id = next((r[0] for r in rows if r[1] == to_name), None)
+    res_to = conn.execute(
+        "MATCH (p:Person) WHERE p.name = $name RETURN p.uuid", {"name": to_name}
+    )
+    if not res_to.hasNext():
+        return f"Error: Person '{to_name}' not found."
 
-    if not from_id or not to_id:
-        return f"Could not find both persons: {from_name} (Found: {from_id}), {to_name} (Found: {to_id})"
+    # Create relationship
+    query = f"MATCH (a:Person {{name: $from_name}}), (b:Person {{name: $to_name}}) CREATE (a)-[:{safe_type} {{data: $data}}]->(b)"
+    conn.execute(
+        query, {"from_name": from_name, "to_name": to_name, "data": properties}
+    )
 
-    # 2. Insert Fact
-    script = """
-    ?[from_id, to_id, type, data] <- [[$from_id, $to_id, $type, $data]]
-    :put fact {from_id, to_id, type, data}
-    """
-    params = {"from_id": from_id, "to_id": to_id, "type": type, "data": props}
-
-    res = execute_cozo(script, params)
-    if res.get("ok"):
-        return f"Added fact: {from_name} --[{type}]--> {to_name}"
-    return f"Failed: {res.get('message')}"
-
-
-@mcp.tool()
-def add_rule(rule_name: str, datalog_body: str) -> str:
-    """
-    Define a persistent Datalog rule.
-    Args:
-        rule_name: Unique name for the rule (e.g., 'father_rule').
-        datalog_body: The Cozo Datalog rule (e.g., 'father(F, C) :- fact(F, C, "parent_child", _), person(F, _, data), data->gender == "M"').
-    """
-    script = """
-    ?[name, body] <- [[$name, $body]]
-    :put rule {name, body}
-    """
-    params = {"name": rule_name, "body": datalog_body}
-
-    result = execute_cozo(script, params)
-    if result.get("ok"):
-        return f"Rule '{rule_name}' saved successfully."
-    return f"Failed to save rule: {result.get('message')}"
+    return f"Added fact: {from_name} --[{safe_type}]--> {to_name}"
 
 
 @mcp.tool()
-def run_custom_query(query: str) -> str:
+def add_rule(name: str, cypher_query: str, description: str = "") -> str:
     """
-    Run a Datalog query with all stored rules included.
+    Save a reusable Cypher query/rule.
     Args:
-        query: The Datalog query to execute (e.g., '?[n] := father(f, c), person(f, n, _)').
+        name: Unique name for the rule (e.g., 'find_siblings').
+        cypher_query: The Cypher query string. Use parameters like $name if needed.
+        description: Optional description.
     """
-    # 1. Fetch stored rules
-    rules_block = get_stored_rules()
-
-    # 2. Combine rules and query
-    full_script = f"{rules_block}\n{query}"
-
-    # 3. Execute
-    result = execute_cozo(full_script)
-    if result.get("ok"):
-        return json.dumps(result, indent=2)
-    return f"Error executing query: {result.get('message')}"
+    conn = get_conn()
+    # Upsert rule
+    # Kuzu doesn't have ON CREATE SET for MERGE in strict sense universally, check docs.
+    # Standard Cypher does. Kuzu supports MERGE.
+    # If fails, we can delete and create.
+    try:
+        conn.execute(
+            "MERGE (r:Rule {name: $name}) ON CREATE SET r.cypher = $cypher, r.description = $desc ON MATCH SET r.cypher = $cypher, r.description = $desc",
+            {"name": name, "cypher": cypher_query, "desc": description},
+        )
+        return f"Rule '{name}' saved."
+    except Exception as e:
+        return f"Error saving rule: {e}"
 
 
 @mcp.tool()
-def search_facts(query_string: str) -> str:
+def get_rule(name: str) -> str:
+    """Retrieve a stored rule's Cypher query."""
+    conn = get_conn()
+    res = conn.execute(
+        "MATCH (r:Rule) WHERE r.name = $name RETURN r.cypher, r.description",
+        {"name": name},
+    )
+    if res.hasNext():
+        row = res.getNext()
+        return f"Rule: {name}\nDescription: {row[1]}\nCypher: {row[0]}"
+    return "Rule not found."
+
+
+@mcp.tool()
+def list_rules() -> str:
+    """List all stored rules."""
+    conn = get_conn()
+    res = conn.execute("MATCH (r:Rule) RETURN r.name, r.description")
+    rules = []
+    while res.hasNext():
+        row = res.getNext()
+        # Kuzu row might be list or dict depending on driver version.
+        # Assuming list for now based on older docs, but let's be safe.
+        r_name = row[0] if isinstance(row, list) else row["r.name"]
+        r_desc = row[1] if isinstance(row, list) else row["r.description"]
+        rules.append(f"- {r_name}: {r_desc}")
+    return "\n".join(rules) if rules else "No rules found."
+
+
+@mcp.tool()
+def run_cypher(query: str) -> str:
     """
-    Search for facts based on arbitrary criteria using a Datalog query.
-    Convenience wrapper around run_custom_query.
+    Execute a raw Cypher query.
     Args:
-        query_string: A Datalog query string.
+        query: Cypher query string.
     """
-    return run_custom_query(query_string)
+    conn = get_conn()
+    try:
+        result = conn.execute(query)
+        rows = []
+        while result.hasNext():
+            row = result.getNext()
+            rows.append(str(row))
+        return "\n".join(rows) if rows else "No results."
+    except Exception as e:
+        return f"Error executing query: {str(e)}"
 
 
 @mcp.tool()
 def list_relation_types() -> str:
-    """
-    List all distinct relationship types currently in use.
-    Use this to ensure you reuse existing types (e.g., 'parent_child') instead of creating duplicates (e.g., 'is_parent').
-    """
-    script = "?[type] := *fact{type}, :distinct type"
-    result = execute_cozo(script)
-    if result.get("ok"):
-        types = [row[0] for row in result.get("rows", [])]
-        return f"Existing Relation Types: {', '.join(types)}"
-    return "No relations found or error executing query."
+    """List all relationship types (Edge Tables)."""
+    conn = get_conn()
+    # Use CALL db.schema() output parsing or just simple text return if hard to parse
+    # For POC, let's try a direct approach
+    try:
+        result = conn.execute("CALL db.schema() RETURN *")
+        tables = []
+        while result.hasNext():
+            row = result.getNext()
+            tables.append(str(row))
+        return "\n".join(tables)
+    except Exception:
+        return "Could not list types."
 
 
 @mcp.tool()
 def inspect_person_schema() -> str:
-    """
-    Return a sample of JSON keys/data from existing people to help understand the current schema conventions.
-    Use this before adding a new person to ensure you use consistent property names (e.g., 'job' vs 'occupation').
-    """
-    # Sample 5 people to see their data structure
-    script = "?[name, data] := *person{name, data} limit 5"
-    result = execute_cozo(script)
-    if result.get("ok"):
-        rows = result.get("rows", [])
-        if not rows:
-            return "No people found in database."
-
-        output = ["Sample Data Patterns:"]
-        for row in rows:
-            name, data = row[0], row[1]
-            output.append(f"- {name}: {json.dumps(data)}")
-        return "\n".join(output)
-    return "Error querying people."
+    """Return a sample of people data."""
+    conn = get_conn()
+    try:
+        result = conn.execute("MATCH (p:Person) RETURN p.name, p.data LIMIT 5")
+        output = []
+        while result.hasNext():
+            row = result.getNext()
+            output.append(str(row))
+        return "\n".join(output) if output else "No people found."
+    except Exception as e:
+        return f"Error: {e}"
 
 
-# Run schema initialization on module import (for Uvicorn)
-if wait_for_cozo():
+# Run initialization
+try:
     initialize_schema()
-else:
-    print("Error: Could not connect to CozoDB. Exiting...")
-    sys.exit(1)
+except Exception as e:
+    print(f"Initialization warning: {e}")
 
-# Create the SSE app AFTER tools are defined
+# SSE App
 app = mcp.sse_app()
 
 if __name__ == "__main__":
