@@ -239,17 +239,25 @@ def run_cypher(query: str) -> str:
 def list_relation_types() -> str:
     """List all relationship types (Edge Tables)."""
     conn = get_conn()
-    # Use CALL db.schema() output parsing or just simple text return if hard to parse
-    # For POC, let's try a direct approach
     try:
-        result = conn.execute("CALL db.schema() RETURN *")
+        # Use SHOW TABLES since db.schema() is deprecated/removed in newer Kuzu versions
+        result = conn.execute("CALL SHOW_TABLES() RETURN *")
         tables = []
         while result.has_next():
             row = result.get_next()
-            tables.append(str(row))
-        return "\n".join(tables)
-    except Exception:
-        return "Could not list types."
+            # row format: [id, name, type, storage, options] or similar depending on version
+            # We want to filter for type='REL'
+            # Let's inspect the row structure based on previous manual query result:
+            # [3, 'created', 'REL', 'local(kuzu)', '']
+            if isinstance(row, list) and len(row) >= 3:
+                if row[2] == "REL":
+                    tables.append(row[1])
+            elif isinstance(row, dict) and row.get("type") == "REL":
+                tables.append(row.get("name"))
+
+        return "\n".join(tables) if tables else "No relationship types found."
+    except Exception as e:
+        return f"Could not list types: {e}"
 
 
 @mcp.tool()
