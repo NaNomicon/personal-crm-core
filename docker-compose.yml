@@ -24,3 +24,8 @@ services:
     depends_on:
       - cozodb
     restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.mcp-server.rule=Host(`pcrm.nanomicon.com`)"
+      - "traefik.http.services.mcp-server.loadbalancer.server.port=8000"
+      - "traefik.http.routers.mcp-server.entrypoints=websecure"

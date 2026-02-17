@@ -30,8 +30,6 @@ def get_cozo_token():
     return token
 
 
-COZO_AUTH_TOKEN = get_cozo_token()
-
 # Initialize FastMCP
 # Set host to 0.0.0.0 to allow external access (fixes "Invalid Host header")
 mcp = FastMCP("PersonalCRM-Cozo", host="0.0.0.0")
@@ -43,11 +41,13 @@ def wait_for_cozo(retries: int = 60, delay: int = 2) -> bool:
     url = f"{COZO_HOST}/text-query"
     # Simple check query
     check_payload = {"script": "?[] <- [['ping']]", "params": {}}
-    headers = {"Content-Type": "application/json"}
-    if COZO_AUTH_TOKEN:
-        headers["x-cozo-auth"] = COZO_AUTH_TOKEN
 
     for i in range(retries):
+        headers = {"Content-Type": "application/json"}
+        token = get_cozo_token()
+        if token:
+            headers["x-cozo-auth"] = token
+
         try:
             # Short timeout to fail fast
             response = requests.post(
@@ -77,7 +77,11 @@ def wait_for_cozo(retries: int = 60, delay: int = 2) -> bool:
 def execute_cozo(script: str, params: dict | None = None):
     """Execute a script against CozoDB HTTP API"""
     url = f"{COZO_HOST}/text-query"
-    headers = {"Content-Type": "application/json", "x-cozo-auth": COZO_AUTH_TOKEN}
+    headers = {"Content-Type": "application/json"}
+    token = get_cozo_token()
+    if token:
+        headers["x-cozo-auth"] = token
+
     payload = {"script": script, "params": params or {}}
 
     try:
