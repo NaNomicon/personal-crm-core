@@ -175,12 +175,10 @@ def add_rule(name: str, cypher_query: str, description: str = "") -> str:
     """
     conn = get_conn()
     # Upsert rule
-    # Kuzu doesn't have ON CREATE SET for MERGE in strict sense universally, check docs.
-    # Standard Cypher does. Kuzu supports MERGE.
-    # If fails, we can delete and create.
+    # Kuzu MERGE simple upsert
     try:
         conn.execute(
-            "MERGE (r:Rule {name: $name}) ON CREATE SET r.cypher = $cypher, r.description = $desc ON MATCH SET r.cypher = $cypher, r.description = $desc",
+            "MERGE (r:Rule {name: $name}) SET r.cypher = $cypher, r.description = $desc",
             {"name": name, "cypher": cypher_query, "desc": description},
         )
         return f"Rule '{name}' saved."
