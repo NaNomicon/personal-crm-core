@@ -111,7 +111,7 @@ def add_person(name: str, properties: str = "{}") -> str:
 
     # Check if name exists (enforce unique name for this POC)
     res = conn.execute("MATCH (p:Person) WHERE p.name = $name RETURN p", {"name": name})
-    if res.hasNext():
+    if res.has_next():
         return f"Error: Person with name '{name}' already exists."
 
     conn.execute(
@@ -146,13 +146,13 @@ def add_fact(from_name: str, to_name: str, type: str, properties: str = "{}") ->
     res_from = conn.execute(
         "MATCH (p:Person) WHERE p.name = $name RETURN p.uuid", {"name": from_name}
     )
-    if not res_from.hasNext():
+    if not res_from.has_next():
         return f"Error: Person '{from_name}' not found."
 
     res_to = conn.execute(
         "MATCH (p:Person) WHERE p.name = $name RETURN p.uuid", {"name": to_name}
     )
-    if not res_to.hasNext():
+    if not res_to.has_next():
         return f"Error: Person '{to_name}' not found."
 
     # Create relationship
@@ -196,8 +196,8 @@ def get_rule(name: str) -> str:
         "MATCH (r:Rule) WHERE r.name = $name RETURN r.cypher, r.description",
         {"name": name},
     )
-    if res.hasNext():
-        row = res.getNext()
+    if res.has_next():
+        row = res.get_next()
         return f"Rule: {name}\nDescription: {row[1]}\nCypher: {row[0]}"
     return "Rule not found."
 
@@ -208,8 +208,8 @@ def list_rules() -> str:
     conn = get_conn()
     res = conn.execute("MATCH (r:Rule) RETURN r.name, r.description")
     rules = []
-    while res.hasNext():
-        row = res.getNext()
+    while res.has_next():
+        row = res.get_next()
         # Kuzu row might be list or dict depending on driver version.
         # Assuming list for now based on older docs, but let's be safe.
         r_name = row[0] if isinstance(row, list) else row["r.name"]
@@ -229,8 +229,8 @@ def run_cypher(query: str) -> str:
     try:
         result = conn.execute(query)
         rows = []
-        while result.hasNext():
-            row = result.getNext()
+        while result.has_next():
+            row = result.get_next()
             rows.append(str(row))
         return "\n".join(rows) if rows else "No results."
     except Exception as e:
@@ -246,8 +246,8 @@ def list_relation_types() -> str:
     try:
         result = conn.execute("CALL db.schema() RETURN *")
         tables = []
-        while result.hasNext():
-            row = result.getNext()
+        while result.has_next():
+            row = result.get_next()
             tables.append(str(row))
         return "\n".join(tables)
     except Exception:
@@ -261,8 +261,8 @@ def inspect_person_schema() -> str:
     try:
         result = conn.execute("MATCH (p:Person) RETURN p.name, p.data LIMIT 5")
         output = []
-        while result.hasNext():
-            row = result.getNext()
+        while result.has_next():
+            row = result.get_next()
             output.append(str(row))
         return "\n".join(output) if output else "No people found."
     except Exception as e:
