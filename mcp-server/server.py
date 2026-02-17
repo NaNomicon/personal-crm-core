@@ -9,10 +9,11 @@ import shutil
 mcp = FastMCP("PersonalCRM-Kuzu", host="0.0.0.0")
 
 # Database Path
-DB_PATH = os.getenv("KUZU_PATH", "/app/kuzu_data")
-
+DB_PATH = os.getenv("KUZU_PATH", "/app/kuzu_data/personal_crm_db")
 
 # Initialize KuzuDB
+
+
 def get_db():
     return kuzu.Database(DB_PATH)
 
