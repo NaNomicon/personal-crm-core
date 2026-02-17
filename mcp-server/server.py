@@ -41,8 +41,9 @@ def get_schema_info(conn):
 
 def initialize_schema():
     """Initialize the KuzuDB schema for Person, Rules, and base structures."""
-    if not os.path.exists(DB_PATH):
-        os.makedirs(DB_PATH)
+    db_dir = os.path.dirname(DB_PATH)
+    if db_dir and not os.path.exists(db_dir):
+        os.makedirs(db_dir, exist_ok=True)
 
     db = get_db()
     conn = kuzu.Connection(db)
