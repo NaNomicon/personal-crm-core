@@ -174,24 +174,30 @@ def add_rule(name: str, cypher_query: str, description: str = "") -> str:
         description: Optional description.
     """
     conn = get_conn()
-    # Manual upsert to avoid Kuzu MERGE stability issues with parameters
+    # Manual upsert to avoid KuzuDB parser issues with map parameters in CREATE/MERGE clauses
     try:
+        # Escape single quotes for manual string construction
+        safe_cypher = cypher_query.replace("'", "\\'")
+        safe_desc = description.replace("'", "\\'")
+
         # Check if rule exists
         check = conn.execute(
             "MATCH (r:Rule) WHERE r.name = $name RETURN r.name", {"name": name}
         )
+
         if check.has_next():
             # Update
+            # We use f-string interpolation because binding parameters in SET clauses combined with other things
+            # has shown instability in this specific version/setup.
             conn.execute(
-                "MATCH (r:Rule) WHERE r.name = $name SET r.cypher = $cypher, r.description = $desc",
-                {"name": name, "cypher": cypher_query, "desc": description},
+                f"MATCH (r:Rule) WHERE r.name = '{name}' SET r.cypher = '{safe_cypher}', r.description = '{safe_desc}'"
             )
             return f"Rule '{name}' updated."
         else:
             # Create
+            # We explicitly avoid using parameters for the map properties here to bypass the "expected rule oC_SingleQuery" error
             conn.execute(
-                "CREATE (r:Rule {name: $name, cypher: $cypher, description: $desc})",
-                {"name": name, "cypher": cypher_query, "desc": description},
+                f"CREATE (r:Rule {{name: '{name}', cypher: '{safe_cypher}', description: '{safe_desc}'}})"
             )
             return f"Rule '{name}' created."
     except Exception as e:
